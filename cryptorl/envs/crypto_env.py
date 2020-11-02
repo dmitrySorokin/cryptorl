@@ -8,8 +8,8 @@ class CryptoEnv(gym.Env):
     episode_len = 100
     # obs = [[action_i1, action_i2, action_i3, action_i4, error_i], ...] where i is step
 
-    observation_space = gym.spaces.Box(low=-1, high=1, shape=(episode_len, n_actions + 1), dtype=np.float64)
-    action_space = gym.spaces.Box(low=-1, high=1, shape=(n_actions,), dtype=np.float64)
+    observation_space = gym.spaces.Box(low=-1, high=1, shape=(episode_len, n_actions + 1), dtype=np.float32)
+    action_space = gym.spaces.Box(low=-1, high=1, shape=(n_actions,), dtype=np.float32)
 
     first_click = np.array([[1], [0]])
     second_click = np.array([[0], [1]])
