@@ -5,10 +5,12 @@ from .utils import Environment
 
 class CryptoEnv(gym.Env):
     n_actions = 4
-    episode_len = 100
-    # obs = [[action_i1, action_i2, action_i3, action_i4, error_i], ...] where i is step
+    _max_episode_steps = 100
+    _state_len = 8
+    _offset = _state_len + n_actions
+    _obs_len = _offset * _max_episode_steps
 
-    observation_space = gym.spaces.Box(low=-1, high=1, shape=(episode_len, n_actions + 1), dtype=np.float32)
+    observation_space = gym.spaces.Box(low=-1, high=1, shape=(_obs_len, ), dtype=np.float32)
     action_space = gym.spaces.Box(low=-1, high=1, shape=(n_actions,), dtype=np.float32)
 
     first_click = np.array([[1], [0]])
@@ -17,24 +19,25 @@ class CryptoEnv(gym.Env):
     def __init__(self):
         self.impl = Environment()
         self.step_id = None
-        self.state = None
         self.handles = None
+        self.state = None
 
     def step(self, action):
         self.handles = np.clip(self.handles + action, -1, 1)
-        loss_0_0, loss_pi2_pi2, loss_pi_0, loss_3pi2_pi2 = self._calc_loss(action)
-        loss = np.mean([loss_0_0, loss_pi2_pi2, loss_pi_0, loss_3pi2_pi2])
-        self.state[self.step_id] = [*action, loss]
+        delta_0_0, delta_pi2_pi2, delta_pi_0, delta_3pi2_pi2 = self._calc_state()
+        loss = np.mean(list(map(np.linalg.norm, [delta_0_0, delta_pi2_pi2, delta_pi_0, delta_3pi2_pi2])))
+        deltas = np.concatenate([delta_0_0, delta_pi2_pi2, delta_pi_0, delta_3pi2_pi2], axis=0).reshape(-1)
+        self.state[self.step_id * CryptoEnv._offset: (self.step_id + 1) * CryptoEnv._offset] = [*deltas, *action]
         self.step_id += 1
         info = {
             'loss': loss,
-            'loss_0_0': loss_0_0,
-            'loss_pi2_pi2': loss_pi2_pi2,
-            'loss_pi_0': loss_pi_0,
-            'loss_3pi2_pi2': loss_3pi2_pi2,
-            'step_id': self.step_id
+            'delta_0_0': np.linalg.norm(delta_0_0),
+            'delta_pi2_pi2': np.linalg.norm(delta_pi2_pi2),
+            'delta_pi_0': np.linalg.norm(delta_pi_0),
+            'delta_3pi2_pi2': np.linalg.norm(delta_3pi2_pi2),
+            'delta_id': self.step_id
         }
-        return self.state, -loss, self.step_id == CryptoEnv.episode_len, info
+        return self.state, 1 - loss, self.step_id == CryptoEnv._max_episode_steps, info
 
     def reset(self):
         self.impl.InitRandom()
@@ -43,13 +46,13 @@ class CryptoEnv(gym.Env):
         self.state = np.zeros(CryptoEnv.observation_space.shape)
         return self.step(self.handles)[0]
 
-    def _calc_loss(self, action):
-        rescaled = self._rescale_action(action)
+    def _calc_state(self):
+        rescaled = self._rescale_action(self.handles)
         return (
-            np.linalg.norm(self.impl.Step(0, 0, *rescaled) - CryptoEnv.first_click),
-            np.linalg.norm(self.impl.Step(np.pi / 2, np.pi / 2, *rescaled) - CryptoEnv.second_click),
-            np.linalg.norm(self.impl.Step(np.pi, 0, *rescaled) - CryptoEnv.second_click),
-            np.linalg.norm(self.impl.Step(3 * np.pi / 2, np.pi / 2, *rescaled) - CryptoEnv.first_click)
+            self.impl.Step(0, 0, *rescaled) - CryptoEnv.first_click,
+            self.impl.Step(np.pi / 2, np.pi / 2, *rescaled) - CryptoEnv.second_click,
+            self.impl.Step(np.pi, 0, *rescaled) - CryptoEnv.second_click,
+            self.impl.Step(3 * np.pi / 2, np.pi / 2, *rescaled) - CryptoEnv.first_click
         )
 
     def _rescale_action(self, action):
